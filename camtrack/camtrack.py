@@ -41,7 +41,7 @@ def track_and_calc_colors(camera_parameters: CameraParameters,
         rgb_sequence[0].shape[0]
     )
 
-    poses = [None] * len(corner_storage)
+    tracks = [None] * len(corner_storage)
     cloud_points = [None] * (corner_storage.max_corner_id() + 1)
 
     correspondences = build_correspondences(corner_storage[known_view_1[0]], corner_storage[known_view_2[0]])
@@ -61,49 +61,48 @@ def track_and_calc_colors(camera_parameters: CameraParameters,
             cloud_points[id] = points3d[i]
             cnt += 1
             cnt_all += 1
-    print(f"Cloud poinds added: {cnt}")
-    print(f"Cloud poinds total: {cnt_all}")
+    print(f"Cloud points added: {cnt}")
+    print(f"Cloud points total: {cnt_all}")
     
-    poses[0] = mat_0
-    poses[1] = mat_1
+    tracks[0] = mat_0
+    tracks[1] = mat_1
    
     not_done = True
     while not_done:
         not_done = False
         for i in range(len(corner_storage)):
-            if poses[i] is None:
+            if tracks[i] is None:
                 print(f"Processing frame {i}")
-                cloud_points, poses[i] = _compute_pose(corner_storage[i], cloud_points, intrinsic_mat)
-                if poses[i] is None:
+                cloud_points, tracks[i] = _compute_track(corner_storage[i], cloud_points, intrinsic_mat)
+                if tracks[i] is None:
                     continue
-
+                cnt = 0
                 for j in range(len(corner_storage)):
-                    if poses[j] is not None and i != j:
+                    if tracks[j] is not None and i != j:
                         correspondences = build_correspondences(corner_storage[i], corner_storage[j])
+                        mat_0 = tracks[i]
+                        mat_1 = tracks[j]
 
-                        mat_0 = poses[i]
-                        mat_1 = poses[j]
                         points3d, correspondences_ids, median_cos = triangulate_correspondences(correspondences, mat_0, mat_1, intrinsic_mat, tri_params)
-                        print(f"{points3d.shape[0]} points triangulated")
-                        cnt = 0
+                        
                         for k in range(len(correspondences_ids)):
                             id = correspondences_ids[k]
                             if cloud_points[id] is None:
                                 cloud_points[id] = points3d[k]
                                 cnt += 1
-                                cnt_all += 1
-                        print(f"Cloud poinds added: {cnt}")
-                        print(f"Cloud poinds total: {cnt_all}")
-                        not_done = True
+                print(f"Cloud points added: {cnt}")
+                cnt_all = len([p for p in cloud_points if p is not None])
+                print(f"Cloud points total: {cnt_all}")
+                not_done = True
                 print(f"Frame {i} done")
 
     point_cloud_builder = PointCloudBuilder()
     point_cloud_builder.add_points(np.array([id for id in range(len(cloud_points)) if cloud_points[id] is not None]), np.array([point for point in cloud_points if point is not None]))
     
     point_cloud = point_cloud_builder.build_point_cloud()
-    return [view_mat3x4_to_pose(pose) for pose in poses if pose is not None], point_cloud
+    return [view_mat3x4_to_pose(track) for track in tracks if track is not None], point_cloud
 
-def _compute_pose(corners, cloud_points, intrinsic_mat):
+def _compute_track(corners, cloud_points, intrinsic_mat):
         corners_ids = corners.ids.squeeze(-1)
         
         mask = np.ones_like(corners_ids)
@@ -116,7 +115,7 @@ def _compute_pose(corners, cloud_points, intrinsic_mat):
                 ids.append(id)
                 points.append(corners.points[i])
         
-        if len(ids) < 6:
+        if len(ids) < 4:
             return cloud_points, None
 
         points = np.array([point for point in points])
