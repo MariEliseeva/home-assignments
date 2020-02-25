@@ -43,8 +43,9 @@ def _build_impl(frame_sequence: pims.FramesSequence,
     image_0 = frame_sequence[0]
     image_0 = np.round(image_0 * 255).astype('uint8')
     corners_points = np.array(cv2.goodFeaturesToTrack(image_0, MAX_CORNERS, QUALITY_LEVEL, MIN_DISTANCE))
+    corners_ids = np.array(range(len(corners_points)))
 
-    corners = FrameCorners(np.array(range(len(corners_points))), corners_points, np.array([10] * len(corners_points)))
+    corners = FrameCorners(corners_ids, corners_points, np.array([10] * len(corners_points)))
     builder.set_corners_at_frame(0, corners)
 
     free_id = len(corners_points)
@@ -55,19 +56,29 @@ def _build_impl(frame_sequence: pims.FramesSequence,
 
         points, status, _ = cv2.calcOpticalFlowPyrLK(image_0, image_1, corners.points, None, winSize=(10, 10))
         
-        status = status.reshape(-1).astype(np.bool)
-        moved_corner_points = points[status]
+        #print(points[0])
+        status = status.reshape(-1)
+        corners_ids = []
+        moved_corner_points = []
+        for i in range(len(status)):
+            if status[i] == 1:
+                corners_ids.append(corners.ids[i][0])
+                moved_corner_points.append([points[i]])
+        corners_ids = (np.array(corners_ids))
         
         if len(moved_corner_points) < MAX_CORNERS:
 
             mask = np.full_like(image_1, 255)
-            for x, y in moved_corner_points.reshape(-1, 2):
+            for elem in moved_corner_points:
+                x, y = elem[0][0], elem[0][1]
                 cv2.circle(mask, (x, y), MIN_DISTANCE, 0, -1)
 
             new_corners_points = np.array(cv2.goodFeaturesToTrack(image_1, MAX_CORNERS - len(moved_corner_points), QUALITY_LEVEL, MIN_DISTANCE, mask=mask))
-            corners_points = np.append(moved_corner_points, new_corners_points)
+            corners_ids = np.append(np.array(corners_ids), np.array(range(free_id, free_id + len(new_corners_points))))
+            free_id += len(new_corners_points)
+            corners_points = np.append(moved_corner_points, new_corners_points, axis=0)
         
-        corners = FrameCorners(np.array(range(len(corners_points))), corners_points, np.array([10] * len(corners_points)))
+        corners = FrameCorners(corners_ids, corners_points, np.array([10] * len(corners_points)))
         builder.set_corners_at_frame(frame, corners)
         image_0 = image_1
 
