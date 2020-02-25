@@ -14,6 +14,7 @@ import click
 import cv2
 import numpy as np
 import pims
+from scipy.spatial.distance import cdist
 
 from _corners import FrameCorners, CornerStorage, StorageImpl
 from _corners import dump, load, draw, without_short_tracks, create_cli
@@ -37,12 +38,22 @@ class _CornerStorageBuilder:
 def _build_impl(frame_sequence: pims.FramesSequence,
                 builder: _CornerStorageBuilder) -> None:
     MAX_CORNERS = 1000
-    QUALITY_LEVEL = 0.01
+    QUALITY_LEVEL = 0.005
     MIN_DISTANCE = 10
+
+    PARAMS_CORNERS = dict(blockSize=3,
+                      gradientSize=3,
+                      useHarrisDetector=False,
+                      k=0.04)
+
+    PARAMS_MOVED = dict(winSize=(15, 15),
+                     maxLevel=2,
+                     criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03),
+                     minEigThreshold=0.001)
 
     image_0 = frame_sequence[0]
     image_0 = np.round(image_0 * 255).astype('uint8')
-    corners_points = np.array(cv2.goodFeaturesToTrack(image_0, MAX_CORNERS, QUALITY_LEVEL, MIN_DISTANCE))
+    corners_points = np.array(cv2.goodFeaturesToTrack(image_0, MAX_CORNERS, QUALITY_LEVEL, MIN_DISTANCE, None, **PARAMS_CORNERS))
     corners_ids = np.array(range(len(corners_points)))
 
     corners = FrameCorners(corners_ids, corners_points, np.array([10] * len(corners_points)))
@@ -54,31 +65,27 @@ def _build_impl(frame_sequence: pims.FramesSequence,
         
         image_1 = np.round(image_1 * 255).astype('uint8')
 
-        points, status, _ = cv2.calcOpticalFlowPyrLK(image_0, image_1, corners.points, None, winSize=(10, 10))
+        points_1, status, _ = cv2.calcOpticalFlowPyrLK(image_0, image_1, corners.points, None, **PARAMS_MOVED)
         
-        #print(points[0])
         status = status.reshape(-1)
-        corners_ids = []
-        moved_corner_points = []
-        for i in range(len(status)):
-            if status[i] == 1:
-                corners_ids.append(corners.ids[i][0])
-                moved_corner_points.append([points[i]])
-        corners_ids = (np.array(corners_ids))
-        
-        if len(moved_corner_points) < MAX_CORNERS:
+        moved_points = points_1[status == 1]
+        ids = corners.ids[status == 1]
 
-            mask = np.full_like(image_1, 255)
-            for elem in moved_corner_points:
-                x, y = elem[0][0], elem[0][1]
-                cv2.circle(mask, (x, y), MIN_DISTANCE, 0, -1)
-
-            new_corners_points = np.array(cv2.goodFeaturesToTrack(image_1, MAX_CORNERS - len(moved_corner_points), QUALITY_LEVEL, MIN_DISTANCE, mask=mask))
-            corners_ids = np.append(np.array(corners_ids), np.array(range(free_id, free_id + len(new_corners_points))))
-            free_id += len(new_corners_points)
-            corners_points = np.append(moved_corner_points, new_corners_points, axis=0)
+        new_points = cv2.goodFeaturesToTrack(image_1, MAX_CORNERS, QUALITY_LEVEL, MIN_DISTANCE, None, **PARAMS_CORNERS)
+        new_points = new_points.reshape(-1, 2)
         
-        corners = FrameCorners(corners_ids, corners_points, np.array([10] * len(corners_points)))
+        dists = cdist(new_points, moved_points).min(axis=1)
+        
+        points_to_add = MAX_CORNERS - len(moved_points)
+        new_points_indices = np.argsort(dists)[-points_to_add:]
+
+        corners = FrameCorners(
+                np.concatenate([ids.reshape(-1), free_id + np.arange(points_to_add)]),
+                np.concatenate([moved_points, new_points[new_points_indices]]),
+                np.array([10] * (MAX_CORNERS)))
+
+        free_id += points_to_add
+
         builder.set_corners_at_frame(frame, corners)
         image_0 = image_1
 
