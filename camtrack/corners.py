@@ -76,13 +76,13 @@ def _build_impl(frame_sequence: pims.FramesSequence,
         
         dists = cdist(new_points, moved_points).min(axis=1)
         
-        points_to_add = MAX_CORNERS - len(moved_points)
+        points_to_add = max(len(new_points), MAX_CORNERS) - len(moved_points)
         new_points_indices = np.argsort(dists)[-points_to_add:]
 
         corners = FrameCorners(
                 np.concatenate([ids.reshape(-1), free_id + np.arange(points_to_add)]),
                 np.concatenate([moved_points, new_points[new_points_indices]]),
-                np.array([10] * (MAX_CORNERS)))
+                np.array([10] * (len(moved_points) + len(new_points_indices))))
 
         free_id += points_to_add
 
