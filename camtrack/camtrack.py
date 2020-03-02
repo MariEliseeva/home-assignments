@@ -64,8 +64,8 @@ def track_and_calc_colors(camera_parameters: CameraParameters,
     print(f"Cloud points added: {cnt}")
     print(f"Cloud points total: {cnt_all}")
     
-    tracks[0] = mat_0
-    tracks[1] = mat_1
+    tracks[known_view_1[0]] = mat_0
+    tracks[known_view_2[0]] = mat_1
    
     not_done = True
     while not_done:
@@ -97,7 +97,11 @@ def track_and_calc_colors(camera_parameters: CameraParameters,
                 print(f"Frame {i} done")
 
     point_cloud_builder = PointCloudBuilder()
-    point_cloud_builder.add_points(np.array([id for id in range(len(cloud_points)) if cloud_points[id] is not None]), np.array([point for point in cloud_points if point is not None]))
+
+    ids_to_add = np.array([id for id in range(len(cloud_points)) if cloud_points[id] is not None])
+    points_to_add = np.array([point for point in cloud_points if point is not None])
+    if len(points_to_add) > 0:
+        point_cloud_builder.add_points(ids_to_add, points_to_add)
     
     point_cloud = point_cloud_builder.build_point_cloud()
     return [view_mat3x4_to_pose(track) for track in tracks if track is not None], point_cloud
