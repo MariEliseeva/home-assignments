@@ -104,6 +104,11 @@ def track_and_calc_colors(camera_parameters: CameraParameters,
         point_cloud_builder.add_points(ids_to_add, points_to_add)
     
     point_cloud = point_cloud_builder.build_point_cloud()
+
+    unsuccesful = [track for track in tracks if track is None]
+    if len(unsuccesful) > 0:
+        print(f"Failed to find views for {len(unsuccesful)} frames.")
+
     return [view_mat3x4_to_pose(track) for track in tracks if track is not None], point_cloud
 
 def _compute_track(corners, cloud_points, intrinsic_mat):
@@ -124,7 +129,7 @@ def _compute_track(corners, cloud_points, intrinsic_mat):
 
         points = np.array([point for point in points])
         points3D = np.array([cloud_points[ind] for ind in ids if cloud_points[ind] is not None])
-        success, rvec, tvec, inliers = cv2.solvePnPRansac(points3D, points, intrinsic_mat, None)
+        success, rvec, tvec, inliers = cv2.solvePnPRansac(points3D, points, intrinsic_mat, None, flags=cv2.SOLVEPNP_EPNP)
 
         if not success:
             return cloud_points, None
