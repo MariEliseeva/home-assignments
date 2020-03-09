@@ -71,20 +71,29 @@ def _build_impl(frame_sequence: pims.FramesSequence,
         moved_points = points_1[status == 1]
         ids = corners.ids[status == 1]
 
-        new_points = cv2.goodFeaturesToTrack(image_1, MAX_CORNERS, QUALITY_LEVEL, MIN_DISTANCE, None, **PARAMS_CORNERS)
-        new_points = new_points.reshape(-1, 2)
+        if len(points_1) < MAX_CORNERS:
+            mask = np.full_like(image_1, 255, dtype=np.uint8)
+            for corner in moved_points:
+                cv2.circle(mask, (corner[0], corner[1]), MIN_DISTANCE, 0, -1)
+            new_points = cv2.goodFeaturesToTrack(image_1, MAX_CORNERS, QUALITY_LEVEL, MIN_DISTANCE, mask=mask, **PARAMS_CORNERS)
+            new_points = new_points.reshape(-1, 2)
         
-        dists = cdist(new_points, moved_points).min(axis=1)
+            dists = cdist(new_points, moved_points).min(axis=1)
         
-        points_to_add = max(len(new_points), MAX_CORNERS) - len(moved_points)
-        new_points_indices = np.argsort(dists)[-points_to_add:]
+            points_to_add = min(len(new_points), MAX_CORNERS - len(moved_points))
+            new_points_indices = np.argsort(dists)[-points_to_add:]
 
-        corners = FrameCorners(
+            corners = FrameCorners(
                 np.concatenate([ids.reshape(-1), free_id + np.arange(points_to_add)]),
                 np.concatenate([moved_points, new_points[new_points_indices]]),
-                np.array([10] * (len(moved_points) + len(new_points_indices))))
+                np.array([10] * (points_to_add + len(moved_points))))
+            free_id += points_to_add
+        else:
+            corners = FrameCorners(ids.reshape(-1),
+                moved_points,
+                np.array([10] * len(moved_points)))
 
-        free_id += points_to_add
+            
 
         builder.set_corners_at_frame(frame, corners)
         image_0 = image_1
